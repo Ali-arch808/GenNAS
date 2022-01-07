@@ -7,22 +7,27 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import copy
-import numpy as np
+from copy import deepcopy
+# import numpy as np
+import torch.nn as nn
+import torch
 
 import pynbs.nasbench101.graph_util
 
 # Graphviz is optional and only required for visualization.
+from pynbs.nasbench101 import graph_util
+
 try:
   import graphviz   # pylint: disable=g-import-not-at-top
 except ImportError:
   pass
 
 
-class ModelSpec(object):
+class ModelSpec(nn.Module):
   """Model specification given adjacency matrix and labeling."""
 
   def __init__(self, matrix, ops, data_format='channels_last'):
+    super(ModelSpec, self).__init__()
     """Initialize the module spec.
     Args:
       matrix: ndarray or nested list with shape [V, V] for the adjacency matrix.
@@ -34,9 +39,8 @@ class ModelSpec(object):
     Raises:
       ValueError: invalid matrix or ops
     """
-    if not isinstance(matrix, np.ndarray):
-      matrix = np.array(matrix)
-    shape = np.shape(matrix)
+    matrix = matrix.clone().detach()
+    shape = matrix.shape
     if len(shape) != 2 or shape[0] != shape[1]:
       raise ValueError('matrix must be square')
     if shape[0] != len(ops):
@@ -47,11 +51,11 @@ class ModelSpec(object):
     # Both the original and pruned matrices are deep copies of the matrix and
     # ops so any changes to those after initialization are not recognized by the
     # spec.
-    self.original_matrix = copy.deepcopy(matrix)
-    self.original_ops = copy.deepcopy(ops)
+    self.original_matrix = deepcopy(matrix)
+    self.original_ops = deepcopy(ops)
 
-    self.matrix = copy.deepcopy(matrix)
-    self.ops = copy.deepcopy(ops)
+    self.matrix = deepcopy(matrix)
+    self.ops = deepcopy(ops)
     self.valid_spec = True
     self._prune()
 
@@ -66,7 +70,7 @@ class ModelSpec(object):
     These 3 steps can be combined by deleting the rows and columns of the
     vertices that are not reachable from both the input and output (in reverse).
     """
-    num_vertices = np.shape(self.original_matrix)[0]
+    num_vertices = self.original_matrix.shape[0]
 
     # DFS forward from input
     visited_from_input = set([0])
@@ -101,8 +105,25 @@ class ModelSpec(object):
       self.valid_spec = False
       return
 
-    self.matrix = np.delete(self.matrix, list(extraneous), axis=0)
-    self.matrix = np.delete(self.matrix, list(extraneous), axis=1)
+    # self.matrix = np.delete(self.matrix, list(extraneous), axis=0)
+    # self.matrix = np.delete(self.matrix, list(extraneous), axis=1)
+
+    self.matrix = self.matrix.tolist()
+
+    for i in range(len(self.matrix)):
+      for j in range(len(self.matrix)):
+          if i in extraneous or j in extraneous:
+              self.matrix[i][j] = ''
+
+    for j in range(len(self.matrix)):
+      while '' in self.matrix[j]:
+          self.matrix[j].remove('')
+
+    while [] in self.matrix:
+      self.matrix.remove([])
+
+    self.matrix = torch.tensor(self.matrix)
+
     for index in sorted(extraneous, reverse=True):
       del self.ops[index]
 
@@ -120,7 +141,7 @@ class ModelSpec(object):
 
   def visualize(self):
     """Creates a dot graph. Can be visualized in colab directly."""
-    num_vertices = np.shape(self.matrix)[0]
+    num_vertices = self.matrix.shape[0]
     g = graphviz.Digraph()
     g.node(str(0), 'input')
     for v in range(1, num_vertices - 1):
@@ -137,7 +158,7 @@ class ModelSpec(object):
 
 def is_upper_triangular(matrix):
   """True if matrix is 0 on diagonal and below."""
-  for src in range(np.shape(matrix)[0]):
+  for src in range(matrix.shape[0]):
     for dst in range(0, src + 1):
       if matrix[src, dst] != 0:
         return False

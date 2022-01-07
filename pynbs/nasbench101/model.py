@@ -20,6 +20,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from typing import List, Any
+from torch import Tensor
+
+
 class Network(nn.Module):
     def __init__(self, spec, stem_out_channels, num_stacks, num_modules_per_stack, num_labels):
         super(Network, self).__init__()
@@ -73,6 +77,9 @@ class Network(nn.Module):
                 m.weight.data.normal_(0, 0.01)
                 m.bias.data.zero_()
 
+
+# class Cell(nn.ModuleList):
+# @ torch.jit.interface
 class Cell(nn.Module):
     """
     Builds the model using the adjacency matrix and op labels specified. Channels
@@ -80,19 +87,24 @@ class Cell(nn.Module):
     determined via equally splitting the channel count whenever there is a
     concatenation of Tensors.
     """
+
     def __init__(self, spec, in_channels, out_channels):
         super(Cell, self).__init__()
 
         self.spec = spec
-        self.num_vertices = np.shape(self.spec.matrix)[0]
+        self.num_vertices = self.spec.matrix.shape[0]
 
         # vertex_channels[i] = number of output channels of vertex i
         self.vertex_channels = ComputeVertexChannels(in_channels, out_channels, self.spec.matrix)
-        #self.vertex_channels = [in_channels] + [out_channels] * (self.num_vertices - 1)
+        # self.vertex_channels = [in_channels] + [out_channels] * (self.num_vertices - 1)
+
+        for i in range(len(self.vertex_channels)):
+            if isinstance(self.vertex_channels[i], torch.Tensor):
+                self.vertex_channels[i] = self.vertex_channels[i].item()
 
         # operation for each node
         self.vertex_op = nn.ModuleList([None])
-        for t in range(1, self.num_vertices-1):
+        for t in range(1, self.num_vertices - 1):
             op = OP_MAP[spec.ops[t]](self.vertex_channels[t], self.vertex_channels[t])
             self.vertex_op.append(op)
 
@@ -104,12 +116,24 @@ class Cell(nn.Module):
             else:
                 self.input_op.append(None)
 
-    def forward(self, x):
+    @torch.jit.ignore
+    def forward(self, x: Any) -> Any :
         tensors = [x]
 
         out_concat = []
-        for t in range(1, self.num_vertices-1):
-            fan_in = [Truncate(tensors[src], self.vertex_channels[t]) for src in range(1, t) if self.spec.matrix[src, t]]
+
+        # enum = []
+        # for a , b in enumerate(matrix):
+        #     enum.append((a,b))
+
+        for t in range(1, self.num_vertices - 1):
+            # fan_in = [Truncate(tensors[src], self.vertex_channels[t]) for src in range(1, t) if self.spec.matrix[
+            # src, ] ## NotSupportedError: comprehension ifs not supported yet: ]
+
+            fan_in = []
+            for  src in range(1, t):
+                if self.spec.matrix[src, t]:
+                    fan_in.append(Truncate(tensors[src], torch.tensor(self.vertex_channels[t])))
 
             if self.spec.matrix[0, t]:
                 fan_in.append(self.input_op[t](x))
@@ -121,20 +145,20 @@ class Cell(nn.Module):
             vertex_output = self.vertex_op[t](vertex_input)
 
             tensors.append(vertex_output)
-            if self.spec.matrix[t, self.num_vertices-1]:
+            if self.spec.matrix[t, self.num_vertices - 1]:
                 out_concat.append(tensors[t])
 
         if not out_concat:
-            assert self.spec.matrix[0, self.num_vertices-1]
-            outputs = self.input_op[self.num_vertices-1](tensors[0])
+            assert self.spec.matrix[0, self.num_vertices - 1]
+            outputs = self.input_op[self.num_vertices - 1](tensors[0])
         else:
             if len(out_concat) == 1:
                 outputs = out_concat[0]
             else:
                 outputs = torch.cat(out_concat, 1)
 
-            if self.spec.matrix[0, self.num_vertices-1]:
-                outputs += self.input_op[self.num_vertices-1](tensors[0])
+            if self.spec.matrix[0, self.num_vertices - 1]:
+                outputs += self.input_op[self.num_vertices - 1](tensors[0])
 
             #if self.spec.matrix[0, self.num_vertices-1]:
             #    out_concat.append(self.input_op[self.num_vertices-1](tensors[0]))
@@ -171,7 +195,7 @@ def ComputeVertexChannels(in_channels, out_channels, matrix):
     Returns:
         list of channel counts, in order of the vertices.
     """
-    num_vertices = np.shape(matrix)[0]
+    num_vertices = matrix.shape[0]
 
     vertex_channels = [0] * num_vertices
     vertex_channels[0] = in_channels
@@ -183,17 +207,19 @@ def ComputeVertexChannels(in_channels, out_channels, matrix):
 
     # Compute the in-degree ignoring input, axis 0 is the src vertex and axis 1 is
     # the dst vertex. Summing over 0 gives the in-degree count of each vertex.
-    in_degree = np.sum(matrix[1:], axis=0)
-    interior_channels = out_channels // in_degree[num_vertices - 1]
-    correction = out_channels % in_degree[num_vertices - 1]  # Remainder to add
+
+    in_degree = torch.sum(matrix[1:].clone().detach(), dim=0)
+    # interior_channels = out_channels // in_degree[num_vertices - 1]
+    interior_channels = torch.div(out_channels, in_degree[num_vertices - 1], rounding_mode='trunc')
+    correction = out_channels % in_degree[num_vertices - 1].item()  # Remainder to add
 
     # Set channels of vertices that flow directly to output
     for v in range(1, num_vertices - 1):
-      if matrix[v, num_vertices - 1]:
-          vertex_channels[v] = interior_channels
-          if correction:
-              vertex_channels[v] += 1
-              correction -= 1
+        if matrix[v, num_vertices - 1]:
+            vertex_channels[v] = interior_channels
+            if correction:
+                vertex_channels[v] += 1
+                correction -= 1
 
     # Set channels for all other vertices to the max of the out edges, going
     # backwards. (num_vertices - 2) index skipped because it only connects to
