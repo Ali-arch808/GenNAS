@@ -133,7 +133,7 @@ if __name__ == '__main__':
     with open(os.path.join(path,'subsample.json'),'w') as t:
         json.dump(args.archs,t)
     args.model_builder = model_builder
-    #BUILD CONFIG###################################################################
+    # BUILD CONFIG ###################################################################
     start = time.time()
     results = trainval(args)
     with open(os.path.join(path,'record.json'),'w') as t:
