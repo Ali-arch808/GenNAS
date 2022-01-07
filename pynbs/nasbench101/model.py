@@ -117,7 +117,7 @@ class Cell(nn.Module):
                 self.input_op.append(None)
 
     @torch.jit.ignore
-    def forward(self, x: Any) -> Any :
+    def forward(self, x: Tensor) -> Tensor :
         tensors = [x]
 
         out_concat = []

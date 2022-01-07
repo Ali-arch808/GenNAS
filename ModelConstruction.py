@@ -60,26 +60,25 @@ stem_out_channels = init_channels
 out_channels = stem_out_channels
 
 spec = ModelSpec(matrix, ops, data_format='channels_last')
-myModel_wrapper = Network(spec, stem_out_channels, num_stacks, num_modules_per_stack, num_labels)
-myModel_wrapper.eval()
+Model_wrapper = Network(spec, stem_out_channels, num_stacks, num_modules_per_stack, num_labels)
+Model_wrapper.eval()
 
 
-myModel_wrapper_scripted = torch.jit.script(myModel_wrapper)
-# myModel_wrapper_scripted.save('myModel_wrapper_scripted.pth')
-# x = torch.randn(batch_size, 3, 32, 32, requires_grad=True)
-# # Export the model
-# torch.onnx.export(myModel_wrapper,               # model being run
-#                   x,                         # model input (or a tuple for multiple inputs)
-#                   "myGoodModel.onnx",   # where to save the model (can be a file or file-like object)
-#                   export_params=True,        # store the trained parameter weights inside the model file
-#                   opset_version=10,          # the ONNX version to export the model to
-#                   do_constant_folding=True,  # whether to execute constant folding for optimization
-#                   input_names = ['input'],   # the model's input names
-#                   output_names = ['output'], # the model's output names
-#                   dynamic_axes={'input' : {0 : 'batch_size'},    # variable length axes
-#                                 'output' : {0 : 'batch_size'}})
-#
-#
-# onnx_model = onnx.load("myGoodModel.onnx")
-# onnx.checker.check_model(onnx_model)
-# torch.jit.script()
+Model_wrapper_scripted = torch.jit.script(Model_wrapper)
+Model_wrapper_scripted.save('myModel_wrapper_scripted.pth')
+x = torch.randn(batch_size, 3, 32, 32, requires_grad=True)
+# Export the model
+torch.onnx.export(Model_wrapper,  # model being run
+                  x,  # model input (or a tuple for multiple inputs)
+                  "Model_scripted.onnx",  # where to save the model (can be a file or file-like object)
+                  export_params=True,  # store the trained parameter weights inside the model file
+                  opset_version=10,  # the ONNX version to export the model to
+                  do_constant_folding=True,  # whether to execute constant folding for optimization
+                  input_names = ['input'],  # the model's input names
+                  output_names = ['output'],  # the model's output names
+                  dynamic_axes={'input' : {0 : 'batch_size'},    # variable length axes
+                                'output' : {0 : 'batch_size'}})
+
+
+onnx_model = onnx.load("Model_scripted.onnx")
+onnx.checker.check_model(onnx_model)
