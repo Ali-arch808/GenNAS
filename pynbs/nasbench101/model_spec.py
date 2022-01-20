@@ -39,7 +39,8 @@ class ModelSpec(nn.Module):
     Raises:
       ValueError: invalid matrix or ops
     """
-    matrix = matrix.clone().detach()
+
+    matrix = torch.tensor(matrix)
     shape = matrix.shape
     if len(shape) != 2 or shape[0] != shape[1]:
       raise ValueError('matrix must be square')

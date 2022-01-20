@@ -54,7 +54,7 @@ class Network(nn.Module):
 
         self._initialize_weights()
 
-    def forward(self, x):
+    def forward(self, x:Tensor):
         for _, layer in enumerate(self.layers):
             x = layer(x)
         out = torch.mean(x, (2, 3))
